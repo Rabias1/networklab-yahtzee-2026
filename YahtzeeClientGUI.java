@@ -37,13 +37,16 @@ public class YahtzeeClientGUI {
         JButton rulesButton = new JButton("Rules");
         styleButton(rulesButton);
         
-        // Add action to Start Button (For now, it just prints a message)
+        // Add action to Start Button
         startButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                System.out.println("Start Game button clicked! Waiting for connection...");
-                // Later, we will trigger the server connection here
-                JOptionPane.showMessageDialog(frame, "Waiting for the other player to connect...", "Connecting", JOptionPane.INFORMATION_MESSAGE);
+                System.out.println("Start Game button clicked! Opening game board...");
+                // Hide the start screen
+                frame.dispose(); 
+                // Open the new game board
+                YahtzeeBoardGUI gameBoard = new YahtzeeBoardGUI();
+                gameBoard.show();
             }
         });
         
