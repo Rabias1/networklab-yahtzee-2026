@@ -2,6 +2,8 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.io.*;
+import java.net.Socket;
 import java.util.Arrays;
 import java.util.Random;
 
@@ -11,30 +13,40 @@ public class YahtzeeBoardGUI {
     private JButton rollButton;
     private JButton[] scoreButtons;
     private Random random;
-    private int rollCount; // Tracks the number of rolls (max 3 per turn)
-    private int totalScore; // Tracks the total game score
+    
+    private int rollCount;      
+    private int totalScore;     
     private JLabel totalScoreLabel;
+    
+    private Socket socket;
+    private BufferedReader in;
+    private PrintWriter out;
 
-    // Yahtzee scoring categories
     private final String[] CATEGORIES = {
         "Ones", "Twos", "Threes", "Fours", "Fives", "Sixes",
         "Three of a Kind", "Four of a Kind", "Full House",
         "Small Straight", "Large Straight", "Yahtzee", "Chance"
     };
 
-    public YahtzeeBoardGUI() {
+    public YahtzeeBoardGUI(Socket socket) {
+        this.socket = socket;
         random = new Random();
         rollCount = 0;
         totalScore = 0;
 
-        // Main window setup
+        try {
+            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            out = new PrintWriter(socket.getOutputStream(), true);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
         frame = new JFrame("Yahtzee Game Board");
         frame.setSize(850, 650);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setLayout(new BorderLayout());
         frame.setLocationRelativeTo(null);
 
-        // --- Dice Panel (Center) ---
         JPanel dicePanel = new JPanel();
         dicePanel.setLayout(new FlowLayout(FlowLayout.CENTER, 20, 200));
         dicePanel.setBackground(new Color(39, 174, 96)); 
@@ -53,22 +65,22 @@ public class YahtzeeBoardGUI {
                     btn.setBackground(Color.LIGHT_GRAY); 
                 } else {
                     btn.setBackground(Color.WHITE); 
-                    btn.setSelected(false); // Cannot hold an unrolled die
+                    btn.setSelected(false); 
                 }
             });
             dicePanel.add(diceButtons[i]);
         }
         frame.add(dicePanel, BorderLayout.CENTER);
 
-        // --- Control Panel (Bottom) ---
         JPanel controlPanel = new JPanel();
         controlPanel.setBackground(new Color(44, 62, 80));
         controlPanel.setPreferredSize(new Dimension(850, 80));
         
-        rollButton = new JButton("Roll Dice (3 left)");
+        rollButton = new JButton("Waiting for server...");
         rollButton.setFont(new Font("Arial", Font.BOLD, 24));
-        rollButton.setPreferredSize(new Dimension(250, 50));
+        rollButton.setPreferredSize(new Dimension(300, 50));
         rollButton.setBackground(new Color(236, 240, 241));
+        rollButton.setEnabled(false); 
         
         rollButton.addActionListener(new ActionListener() {
             @Override
@@ -89,7 +101,6 @@ public class YahtzeeBoardGUI {
         controlPanel.add(rollButton);
         frame.add(controlPanel, BorderLayout.SOUTH);
 
-        // --- Score Panel (Right Side) ---
         JPanel scorePanel = new JPanel();
         scorePanel.setPreferredSize(new Dimension(250, 650));
         scorePanel.setBackground(new Color(236, 240, 241));
@@ -103,44 +114,87 @@ public class YahtzeeBoardGUI {
 
         scoreButtons = new JButton[CATEGORIES.length];
         for (int i = 0; i < CATEGORIES.length; i++) {
-            final int categoryIndex = i; // Needed for the action listener
+            final int categoryIndex = i; 
             scoreButtons[i] = new JButton(CATEGORIES[i] + " - [ ? ]");
             scoreButtons[i].setFont(new Font("Arial", Font.PLAIN, 14));
             scoreButtons[i].setFocusPainted(false);
             scoreButtons[i].setBackground(Color.WHITE);
             
-            // Add action when a score category is clicked
             scoreButtons[i].addActionListener(e -> {
                 if (rollCount == 0) {
                     JOptionPane.showMessageDialog(frame, "You must roll the dice first!", "Warning", JOptionPane.WARNING_MESSAGE);
                     return;
                 }
                 
-                // Calculate score
                 int score = calculateScore(categoryIndex);
                 scoreButtons[categoryIndex].setText(CATEGORIES[categoryIndex] + " - [ " + score + " ]");
-                scoreButtons[categoryIndex].setEnabled(false); // Lock the category
+                scoreButtons[categoryIndex].setEnabled(false); 
                 scoreButtons[categoryIndex].setBackground(new Color(189, 195, 199));
                 
-                // Update total score
                 totalScore += score;
                 totalScoreLabel.setText("Total Score: " + totalScore);
                 
-                // Reset for next turn
                 resetTurn();
+                if (out != null) out.println("TURN_FINISHED"); // Siranin bittigini sunucuya bildir
             });
             scorePanel.add(scoreButtons[i]);
         }
 
         totalScoreLabel = new JLabel("Total Score: 0", SwingConstants.CENTER);
         totalScoreLabel.setFont(new Font("Arial", Font.BOLD, 16));
-        totalScoreLabel.setForeground(new Color(192, 57, 43)); // Red color for emphasis
+        totalScoreLabel.setForeground(new Color(192, 57, 43)); 
         scorePanel.add(totalScoreLabel);
         
         frame.add(scorePanel, BorderLayout.EAST);
+
+        startListening();
     }
 
-    // Rolls the unselected dice
+   private void startListening() {
+        new Thread(() -> {
+            try {
+                String message;
+                while ((message = in.readLine()) != null) {
+                    if (message.equals("YOUR_TURN")) {
+                        SwingUtilities.invokeLater(() -> {
+                            frame.setTitle("Yahtzee Game Board - YOUR TURN");
+                            rollButton.setEnabled(true);
+                            rollButton.setText("Roll Dice (3 left)");
+                        });
+                    } else if (message.equals("WAIT_TURN")) {
+                        SwingUtilities.invokeLater(() -> {
+                            frame.setTitle("Yahtzee Game Board - WAITING FOR OPPONENT");
+                            rollButton.setEnabled(false);
+                            rollButton.setText("Waiting for opponent...");
+                        });
+                    } else if (message.equals("GAME_OVER")) {
+                        SwingUtilities.invokeLater(() -> {
+                            frame.setTitle("Yahtzee Game Board - GAME OVER");
+                            rollButton.setEnabled(false);
+                            rollButton.setText("Game Over!");
+                            for (JToggleButton btn : diceButtons) btn.setEnabled(false);
+                        });
+                    } else if (message.equals("SEND_SCORE")) {
+                        out.println(totalScore); // Send total score to server
+                    } else if (message.startsWith("RESULT:")) {
+                        String finalResult = message.substring(7); // Remove "RESULT:" prefix
+                        SwingUtilities.invokeLater(() -> {
+                            JOptionPane.showMessageDialog(frame, "MATCH FINISHED!\n\n" + finalResult, "Final Result", JOptionPane.INFORMATION_MESSAGE);
+                            
+                            // 1. Close the current game board
+                            frame.dispose();
+                            
+                            // 2. Open the main start screen for a new game
+                            new YahtzeeClientGUI().show();
+                        });
+                        break; // Stop the listening thread since this board is closing
+                    }
+                }
+            } catch (IOException e) {
+                System.out.println("Disconnected from server.");
+            }
+        }).start();
+    }
     private void rollDice() {
         for (int i = 0; i < 5; i++) {
             if (!diceButtons[i].isSelected()) {
@@ -150,11 +204,8 @@ public class YahtzeeBoardGUI {
         }
     }
 
-    // Resets the board for the next turn
     private void resetTurn() {
         rollCount = 0;
-        rollButton.setEnabled(true);
-        rollButton.setText("Roll Dice (3 left)");
         for (int i = 0; i < 5; i++) {
             diceButtons[i].setSelected(false);
             diceButtons[i].setBackground(Color.WHITE);
@@ -162,11 +213,10 @@ public class YahtzeeBoardGUI {
         }
     }
 
-    // Yahtzee Scoring Logic Algorithm
     private int calculateScore(int categoryIndex) {
         int[] dice = new int[5];
         int sum = 0;
-        int[] counts = new int[7]; // Index 1-6 will store the frequency of each die face
+        int[] counts = new int[7]; 
         
         for (int i = 0; i < 5; i++) {
             dice[i] = Integer.parseInt(diceButtons[i].getText());
@@ -176,41 +226,38 @@ public class YahtzeeBoardGUI {
         
         Arrays.sort(dice);
 
-        // Upper Section (Ones to Sixes: index 0 to 5)
         if (categoryIndex >= 0 && categoryIndex <= 5) {
             int targetNumber = categoryIndex + 1;
             return counts[targetNumber] * targetNumber;
         }
         
-        // Lower Section
         switch (categoryIndex) {
-            case 6: // Three of a Kind
+            case 6: 
                 for (int count : counts) if (count >= 3) return sum;
                 return 0;
-            case 7: // Four of a Kind
+            case 7: 
                 for (int count : counts) if (count >= 4) return sum;
                 return 0;
-            case 8: // Full House
+            case 8: 
                 boolean hasThree = false, hasTwo = false;
                 for (int count : counts) {
                     if (count == 3) hasThree = true;
                     if (count == 2) hasTwo = true;
                 }
-                if ((hasThree && hasTwo) || (Arrays.stream(counts).anyMatch(c -> c == 5))) return 25; // 5 of a kind also counts as Full House in some rules
+                if ((hasThree && hasTwo) || (Arrays.stream(counts).anyMatch(c -> c == 5))) return 25; 
                 return 0;
-            case 9: // Small Straight (4 consecutive)
+            case 9: 
                 String diceStr = Arrays.toString(dice).replaceAll("[\\[\\]\\, ]", "");
-                // Remove duplicates for straight checking
                 String uniqueDice = diceStr.chars().distinct().sorted().collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append).toString();
                 if (uniqueDice.contains("1234") || uniqueDice.contains("2345") || uniqueDice.contains("3456")) return 30;
                 return 0;
-            case 10: // Large Straight (5 consecutive)
+            case 10: 
                 if (Arrays.equals(dice, new int[]{1, 2, 3, 4, 5}) || Arrays.equals(dice, new int[]{2, 3, 4, 5, 6})) return 40;
                 return 0;
-            case 11: // Yahtzee (5 of a kind)
+            case 11: 
                 for (int count : counts) if (count == 5) return 50;
                 return 0;
-            case 12: // Chance
+            case 12: 
                 return sum;
         }
         return 0;
@@ -218,11 +265,5 @@ public class YahtzeeBoardGUI {
 
     public void show() {
         frame.setVisible(true);
-    }
-
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> {
-            new YahtzeeBoardGUI().show();
-        });
     }
 }

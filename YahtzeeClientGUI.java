@@ -2,6 +2,8 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.io.IOException;
+import java.net.Socket;
 
 public class YahtzeeClientGUI {
     
@@ -41,14 +43,35 @@ public class YahtzeeClientGUI {
         startButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                System.out.println("Start Game button clicked! Opening game board...");
-                // Hide the start screen
-                frame.dispose(); 
-                // Open the new game board
-                YahtzeeBoardGUI gameBoard = new YahtzeeBoardGUI();
-                gameBoard.show();
+                startButton.setEnabled(false); // Disable button to prevent multiple clicks
+                startButton.setText("Connecting...");
+
+                // Network operations should run in a separate thread to keep UI responsive
+                new Thread(() -> {
+                    try {
+                        String serverIp = "56.228.6.77"; // Change this to AWS IP later
+                        int serverPort = 12345;
+                        
+                        // 1. Establish the connection
+                        Socket socket = new Socket(serverIp, serverPort);
+                        
+                        // 2. If successful, open the board and pass the socket
+                        SwingUtilities.invokeLater(() -> {
+                            frame.dispose(); // Close start screen
+                            YahtzeeBoardGUI gameBoard = new YahtzeeBoardGUI(socket); // Correctly passing the socket
+                            gameBoard.show();
+                        });
+                    } catch (IOException ex) {
+                        // If connection fails
+                        SwingUtilities.invokeLater(() -> {
+                            JOptionPane.showMessageDialog(frame, "Server not found! Start the Server first.", "Error", JOptionPane.ERROR_MESSAGE);
+                            startButton.setEnabled(true);
+                            startButton.setText("Start Game");
+                        });
+                    }
+                }).start();
             }
-        });
+        }); // <-- Fazladan olan '});' silindi! Sadece bu kalmali.
         
         // Add components to the panel
         gbc.gridy = 0;
