@@ -1,21 +1,26 @@
 import java.io.*;
 import java.net.*;
 
+/**
+ * Basic connection client for Yahtzee project.
+ * Used for verifying connection to the AWS server.
+ */
 public class YahtzeeClient {
     public static void main(String[] args) {
-        // AWS server IP address will be placed here in the future
-        String serverIp = "localhost"; 
+        // Mandatory AWS Public IP as per project requirements
+        String serverIp = "56.228.6.77"; 
         int serverPort = 12345;
         
         try (Socket socket = new Socket(serverIp, serverPort)) {
-            System.out.println("Successfully connected to the server! Waiting for the game to start...");
+            System.out.println("Connected to AWS Server at " + serverIp);
+            System.out.println("Waiting for game synchronization...");
             
-            // Short delay to prevent the program from closing immediately (won't be needed once GUI is added)
-            Thread.sleep(5000); 
+            // Connection persistence for handshake verification
+            Thread.sleep(3000); 
             
         } catch (IOException | InterruptedException e) {
-            System.out.println("Failed to connect to the server. Make sure the server is running.");
-            e.printStackTrace();
+            System.err.println("Error: AWS Server connection failed.");
+            System.err.println("Verify AWS Security Group rules for Port " + serverPort);
         }
     }
 }
